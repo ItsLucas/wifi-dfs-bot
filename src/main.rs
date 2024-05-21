@@ -1,12 +1,10 @@
 use tokio::time::Duration;
 use teloxide::{prelude::*, utils::command::BotCommands};
 use tokio::process::Command as OtherCommand;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 use tokio::sync::Notify;
 use crate::ThreadState::Running;
-
-static STARTED: AtomicBool = AtomicBool::new(false);
 
 enum ThreadState {
     Running = 1,
@@ -23,7 +21,10 @@ async fn main() {
 
     let bot = Bot::from_env();
     let notify = Arc::new(Notify::new());
-    Command::repl_with_listener(bot, |bot, msg, cmd| answer(notify.clone(), bot, msg, cmd), /* listener */).await;
+    Command::repl(
+        bot,
+        move |bot, msg, cmd| answer(notify.clone(), bot, msg, cmd),
+    ).await;
 }
 
 #[derive(BotCommands, Clone)]
@@ -40,7 +41,7 @@ enum Command {
 async fn worker_thread(bot: Bot, msg: Message, notify: Arc<Notify>) {
     STATE.store(Running as i32, Ordering::Relaxed);
     loop {
-        if (STATE.load(Ordering::Relaxed) == ThreadState::Stopping as i32) {
+        if STATE.load(Ordering::Relaxed) == ThreadState::Stopping as i32 {
             break;
         }
         let output = OtherCommand::new("dmesg")
@@ -62,6 +63,7 @@ async fn worker_thread(bot: Bot, msg: Message, notify: Arc<Notify>) {
         }
     }
     STATE.store(ThreadState::Stopped as i32, Ordering::Relaxed);
+    bot.send_message(msg.chat.id, "DFS Monitor Stopped.".to_string()).await.unwrap();
     return;
 }
 
